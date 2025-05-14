@@ -10,6 +10,7 @@
     "repositorio",
     "startfile",
     "venv",
-    "winget"
+    "winget",
+    "xlrd"
   ]
 }
