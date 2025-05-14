@@ -1,4 +1,11 @@
 @echo off
+REM Check if application is already installed in this location
+IF EXIST "%~dp0run.bat" (
+    echo Sistema ja instalado, iniciando...
+    call "%~dp0run.bat" %*
+    exit /b
+)
+
 echo Verificando se o Git esta instalado...
 where git >nul 2>nul
 if %errorlevel% neq 0 (

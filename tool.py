@@ -39,7 +39,18 @@ class FaturaProcessorApp:
         self.text_area.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
         
         self.selected_file = None
-        
+
+        # Check if DE-PARA.xlsx exists first
+        depara_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.xlsx")
+        if not os.path.exists(depara_path):
+            example_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.example.xlsx")
+            import shutil
+            shutil.copy2(example_path, depara_path)
+            from tkinter import messagebox
+            # Use after to ensure the window is fully loaded before showing the message
+            self.app.after(100, lambda: self.show_depara_warning(depara_path))
+            return
+
         # Check if file was passed as argument
         if len(sys.argv) > 1:
             filepath = sys.argv[1]
@@ -69,20 +80,7 @@ class FaturaProcessorApp:
             return
             
         try:
-            # Check if DE-PARA.xlsx exists, if not create from example
-            depara_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.xlsx")
-            if not os.path.exists(depara_path):
-                example_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.example.xlsx")
-                import shutil
-                shutil.copy2(example_path, depara_path)
-                from tkinter import messagebox
-                messagebox.showwarning("Configuração Necessária", 
-                    "O arquivo DE-PARA.xlsx ainda não foi configurado.\n\n" +
-                    "A planilha será aberta para você configurar o mapeamento de logons e sites.\n" +
-                    "Por favor, configure-a antes de processar faturas.")
-                os.startfile(depara_path)
-                self.app.quit()
-                return
+            # Read the fatura file
 
             # Read the fatura file
             df_fatura = pd.read_excel(self.selected_file)
@@ -156,6 +154,16 @@ class FaturaProcessorApp:
             self.log_message(f"Erro durante o processamento: {str(e)}")
             if self.auto_close:
                 self.app.after(3000, self.app.quit)
+
+    def show_depara_warning(self, depara_path):
+        """Show warning about DE-PARA configuration and open the file"""
+        from tkinter import messagebox
+        messagebox.showwarning("Configuração Necessária", 
+            "O arquivo DE-PARA.xlsx ainda não foi configurado.\n\n" +
+            "A planilha será aberta para você configurar o mapeamento de logons e sites.\n" +
+            "Por favor, configure-a antes de processar faturas.")
+        os.startfile(depara_path)
+        self.app.quit()
 
 def main():
     app = FaturaProcessorApp()
