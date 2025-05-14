@@ -1,47 +1,28 @@
 import customtkinter as ctk
-import pandas as pd
 from tkinter import filedialog
 import sys
 import os
 from datetime import datetime
-import pythoncom
-from win32com import client
-import tempfile
-import time
-import numpy as np
+from src.excel_reader import ExcelReader
+from src.data_processor import DataProcessor
+from src.gui import AppGui
+import pandas as pd
 
 class FaturaProcessorApp:
     def __init__(self):
         self.app = ctk.CTk()
-        self.app.title("Processador de Fatura")
-        self.app.geometry("600x400")
         
-        # Store whether we should auto-close
+        # Initialize modules
+        self.excel_reader = ExcelReader(self.log_message)
+        self.data_processor = DataProcessor(self.log_message)
+        
+        # Initialize GUI
+        self.gui = AppGui(self.app, self.select_file, self.process_file)
+        
+        # Store whether we should auto-close from command line
         self.auto_close = len(sys.argv) > 1
-        
-        # Configure grid
-        self.app.grid_columnconfigure(0, weight=1)
-        self.app.grid_rowconfigure(1, weight=1)
-        
-        # Frame for file selection
-        self.file_frame = ctk.CTkFrame(self.app)
-        self.file_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-        
-        # Label to show selected file
-        self.file_label = ctk.CTkLabel(self.file_frame, text="Nenhum arquivo selecionado")
-        self.file_label.grid(row=0, column=0, padx=5, pady=5)
-        
-        # Button to select file
-        self.select_button = ctk.CTkButton(self.file_frame, text="Selecionar Fatura", command=self.select_file)
-        self.select_button.grid(row=0, column=1, padx=5, pady=5)
-        
-        # Process button
-        self.process_button = ctk.CTkButton(self.file_frame, text="Processar", command=self.process_file)
-        self.process_button.grid(row=0, column=2, padx=5, pady=5)
-        
-        # Text area for messages
-        self.text_area = ctk.CTkTextbox(self.app, width=580, height=300)
-        self.text_area.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+        if self.auto_close:
+            self.gui.auto_close_var.set(True)
         
         self.selected_file = None
 
@@ -52,7 +33,6 @@ class FaturaProcessorApp:
             import shutil
             shutil.copy2(example_path, self.depara_path)
             from tkinter import messagebox
-            # Use after to ensure the window is fully loaded before showing the message
             self.app.after(100, lambda: self.show_depara_warning(self.depara_path))
             return
 
@@ -61,14 +41,13 @@ class FaturaProcessorApp:
             filepath = sys.argv[1]
             if os.path.exists(filepath):
                 self.selected_file = filepath
-                self.file_label.configure(text=os.path.basename(filepath))
+                self.gui.file_label.configure(text=os.path.basename(filepath))
                 self.log_message(f"Arquivo carregado: {os.path.basename(filepath)}")
-                # Auto-process the file
                 self.app.after(100, self.process_file)
 
     def log_message(self, message):
-        self.text_area.insert("end", f"{message}\n")
-        self.text_area.see("end")
+        self.gui.text_area.insert("end", f"{message}\n")
+        self.gui.text_area.see("end")
 
     def select_file(self):
         filepath = filedialog.askopenfilename(
@@ -76,90 +55,8 @@ class FaturaProcessorApp:
         )
         if filepath:
             self.selected_file = filepath
-            self.file_label.configure(text=os.path.basename(filepath))
+            self.gui.file_label.configure(text=os.path.basename(filepath))
             self.log_message(f"Arquivo selecionado: {os.path.basename(filepath)}")
-
-    def read_excel_com(self, filepath):
-        """Read Excel file using COM object and return dataframe"""
-        excel = None
-        try:
-            pythoncom.CoInitialize()
-            
-            excel = client.DispatchEx("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            
-            self.log_message("Abrindo arquivo protegido...")
-            wb = excel.Workbooks.Open(os.path.abspath(filepath))
-            time.sleep(1)  # Give Excel time to open
-            
-            sheet = wb.Worksheets(1)
-            
-            # Get dimensions
-            last_row = sheet.UsedRange.Row + sheet.UsedRange.Rows.Count - 1
-            last_col = sheet.UsedRange.Column + sheet.UsedRange.Columns.Count - 1
-            
-            self.log_message("Lendo dados...")
-            # Read headers first
-            headers = [str(h) if h is not None else f"Column_{i+1}" 
-                      for i, h in enumerate(sheet.Range(
-                          sheet.Cells(1, 1),
-                          sheet.Cells(1, last_col)
-                      ).Value[0])]
-            
-            # Read data in chunks
-            data = []
-            chunk_size = 1000
-            
-            for start_row in range(2, last_row + 1, chunk_size):
-                end_row = min(start_row + chunk_size - 1, last_row)
-                chunk = sheet.Range(
-                    sheet.Cells(start_row, 1),
-                    sheet.Cells(end_row, last_col)
-                ).Value
-                if chunk:
-                    # Convert each row tuple to list for better handling
-                    for row in chunk:
-                        processed_row = []
-                        for value in row:
-                            # Handle different data types
-                            if value is None:
-                                processed_row.append(np.nan)
-                            elif isinstance(value, (int, float, str)):
-                                processed_row.append(value)
-                            else:
-                                # Convert any other type to string
-                                try:
-                                    processed_row.append(str(value))
-                                except:
-                                    processed_row.append(np.nan)
-                        data.append(processed_row)
-            
-            wb.Close(False)
-            
-            # Convert to DataFrame with proper handling of data types
-            df = pd.DataFrame(data, columns=headers)
-            
-            # Convert and clean specific columns
-            if 'Valor Total Produto' in df.columns:
-                df['Valor Total Produto'] = pd.to_numeric(df['Valor Total Produto'], errors='coerce')
-                df['Valor Total Produto'] = df['Valor Total Produto'].fillna(0)
-            
-            if 'Nome do Logon' in df.columns:
-                df['Nome do Logon'] = df['Nome do Logon'].astype(str)
-                df['Nome do Logon'] = df['Nome do Logon'].replace('nan', '')
-                df['Nome do Logon'] = df['Nome do Logon'].str.strip()
-            
-            self.log_message(f"Dados carregados: {len(df)} linhas")
-            return df
-            
-        except Exception as e:
-            self.log_message(f"Erro ao ler arquivo: {str(e)}")
-            return None
-        finally:
-            if excel:
-                excel.Quit()
-            pythoncom.CoUninitialize()
 
     def process_file(self):
         if not self.selected_file:
@@ -167,41 +64,20 @@ class FaturaProcessorApp:
             return
             
         try:
-            # Read the protected Excel file
-            self.log_message("Iniciando leitura do arquivo...")
-            df_fatura = self.read_excel_com(self.selected_file)
-            if df_fatura is None or df_fatura.empty:
-                self.log_message("Erro: Não foi possível ler o arquivo ou arquivo está vazio")
+            # Read files
+            df_fatura = self.excel_reader.read_excel_com(self.selected_file)
+            if df_fatura is None:
                 return
-            
-            self.log_message("Processando dados...")    
-            # Clean and handle empty values better
-            df_fatura['Nome do Logon'] = df_fatura['Nome do Logon'].fillna('')
-            df_fatura['Nome do Logon'] = df_fatura['Nome do Logon'].astype(str).str.strip()
-            df_fatura = df_fatura[df_fatura['Nome do Logon'] != '']  # Remove empty logons
-            
-            # Read the DE-PARA file
+                
+            df_fatura = self.data_processor.clean_dataframe(df_fatura)
             df_depara = pd.read_excel(self.depara_path)
-            df_depara['Nome do Logon'] = df_depara['Nome do Logon'].fillna('')
-            df_depara['Nome do Logon'] = df_depara['Nome do Logon'].astype(str).str.strip()
+            df_depara = self.data_processor.clean_dataframe(df_depara)
             
-            # Verify required columns in fatura
-            required_columns = ['Nome do Logon', 'Valor Total Produto']
-            missing_columns = [col for col in required_columns if col not in df_fatura.columns]
-            if missing_columns:
-                self.log_message(f"Erro: Colunas ausentes na fatura: {', '.join(missing_columns)}")
+            # Validate data
+            valid, missing_logons = self.data_processor.validate_dataframes(df_fatura, df_depara)
+            if not valid:
                 return
                 
-            # Verify required columns in DE-PARA
-            if 'Nome do Logon' not in df_depara.columns:
-                self.log_message("Erro: Coluna 'Nome do Logon' ausente no arquivo DE-PARA.xlsx")
-                return
-                
-            # Clean and standardize logons for comparison
-            logons_fatura = set(df_fatura['Nome do Logon'].str.upper().str.strip().unique())
-            logons_depara = set(df_depara['Nome do Logon'].str.upper().str.strip().unique())
-            missing_logons = logons_fatura - logons_depara
-            
             if missing_logons:
                 self.log_message("\nAtenção: Os seguintes logons não foram encontrados no DE-PARA:")
                 for logon in missing_logons:
@@ -209,15 +85,10 @@ class FaturaProcessorApp:
                 self.log_message("\nPor favor, atualize o arquivo DE-PARA.xlsx com estes logons e tente novamente.")
                 return
             
-            # Create a mapping dictionary from DE-PARA
-            site_mapping = df_depara.set_index('Nome do Logon')['Site'].to_dict()
+            # Process data
+            df_fatura, df_consolidado = self.data_processor.process_fatura(df_fatura, df_depara)
             
-            # Add the Site column to the fatura
-            df_fatura['Site'] = df_fatura['Nome do Logon'].map(site_mapping)
-            
-            # Create the consolidated sheet
-            df_consolidado = df_fatura.groupby('Site')['Valor Total Produto'].sum().reset_index()
-            
+            # Save results
             # Create default output filename
             default_filename = f"Fatura_Processada_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             
@@ -236,16 +107,25 @@ class FaturaProcessorApp:
                 
                 self.log_message(f"\nProcessamento concluído com sucesso!")
                 self.log_message(f"Arquivo salvo como: {output_filename}")
-                if self.auto_close:
+                
+                # Handle auto-open
+                if self.gui.get_auto_open():
+                    os.startfile(output_filename)
+                
+                # Handle auto-close
+                should_close = self.auto_close or self.gui.get_auto_close()
+                if should_close:
                     self.app.after(1000, self.app.quit)
             else:
                 self.log_message("\nOperação cancelada pelo usuário.")
-                if self.auto_close:
+                should_close = self.auto_close or self.gui.get_auto_close()
+                if should_close:
                     self.app.after(1000, self.app.quit)
             
         except Exception as e:
             self.log_message(f"Erro durante o processamento: {str(e)}")
-            if self.auto_close:
+            should_close = self.auto_close or self.gui.get_auto_close()
+            if should_close:
                 self.app.after(3000, self.app.quit)
 
     def show_depara_warning(self, depara_path):
