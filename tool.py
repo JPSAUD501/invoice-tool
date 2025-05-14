@@ -69,6 +69,21 @@ class FaturaProcessorApp:
             return
             
         try:
+            # Check if DE-PARA.xlsx exists, if not create from example
+            depara_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.xlsx")
+            if not os.path.exists(depara_path):
+                example_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.example.xlsx")
+                import shutil
+                shutil.copy2(example_path, depara_path)
+                from tkinter import messagebox
+                messagebox.showwarning("Configuração Necessária", 
+                    "O arquivo DE-PARA.xlsx ainda não foi configurado.\n\n" +
+                    "A planilha será aberta para você configurar o mapeamento de logons e sites.\n" +
+                    "Por favor, configure-a antes de processar faturas.")
+                os.startfile(depara_path)
+                self.app.quit()
+                return
+
             # Read the fatura file
             df_fatura = pd.read_excel(self.selected_file)
             df_fatura['Nome do Logon'] = df_fatura['Nome do Logon'].astype(str).str.strip()
@@ -76,7 +91,6 @@ class FaturaProcessorApp:
             df_fatura = df_fatura.dropna(subset=['Nome do Logon'])
             
             # Read the DE-PARA file
-            depara_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.xlsx")
             df_depara = pd.read_excel(depara_path)
             df_depara['Nome do Logon'] = df_depara['Nome do Logon'].astype(str).str.strip()
             
