@@ -4,6 +4,11 @@ from tkinter import filedialog
 import sys
 import os
 from datetime import datetime
+import pythoncom
+from win32com import client
+import tempfile
+import time
+import numpy as np
 
 class FaturaProcessorApp:
     def __init__(self):
@@ -74,22 +79,110 @@ class FaturaProcessorApp:
             self.file_label.configure(text=os.path.basename(filepath))
             self.log_message(f"Arquivo selecionado: {os.path.basename(filepath)}")
 
+    def read_excel_com(self, filepath):
+        """Read Excel file using COM object and return dataframe"""
+        excel = None
+        try:
+            pythoncom.CoInitialize()
+            
+            excel = client.DispatchEx("Excel.Application")
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            
+            self.log_message("Abrindo arquivo protegido...")
+            wb = excel.Workbooks.Open(os.path.abspath(filepath))
+            time.sleep(1)  # Give Excel time to open
+            
+            sheet = wb.Worksheets(1)
+            
+            # Get dimensions
+            last_row = sheet.UsedRange.Row + sheet.UsedRange.Rows.Count - 1
+            last_col = sheet.UsedRange.Column + sheet.UsedRange.Columns.Count - 1
+            
+            self.log_message("Lendo dados...")
+            # Read headers first
+            headers = [str(h) if h is not None else f"Column_{i+1}" 
+                      for i, h in enumerate(sheet.Range(
+                          sheet.Cells(1, 1),
+                          sheet.Cells(1, last_col)
+                      ).Value[0])]
+            
+            # Read data in chunks
+            data = []
+            chunk_size = 1000
+            
+            for start_row in range(2, last_row + 1, chunk_size):
+                end_row = min(start_row + chunk_size - 1, last_row)
+                chunk = sheet.Range(
+                    sheet.Cells(start_row, 1),
+                    sheet.Cells(end_row, last_col)
+                ).Value
+                if chunk:
+                    # Convert each row tuple to list for better handling
+                    for row in chunk:
+                        processed_row = []
+                        for value in row:
+                            # Handle different data types
+                            if value is None:
+                                processed_row.append(np.nan)
+                            elif isinstance(value, (int, float, str)):
+                                processed_row.append(value)
+                            else:
+                                # Convert any other type to string
+                                try:
+                                    processed_row.append(str(value))
+                                except:
+                                    processed_row.append(np.nan)
+                        data.append(processed_row)
+            
+            wb.Close(False)
+            
+            # Convert to DataFrame with proper handling of data types
+            df = pd.DataFrame(data, columns=headers)
+            
+            # Convert and clean specific columns
+            if 'Valor Total Produto' in df.columns:
+                df['Valor Total Produto'] = pd.to_numeric(df['Valor Total Produto'], errors='coerce')
+                df['Valor Total Produto'] = df['Valor Total Produto'].fillna(0)
+            
+            if 'Nome do Logon' in df.columns:
+                df['Nome do Logon'] = df['Nome do Logon'].astype(str)
+                df['Nome do Logon'] = df['Nome do Logon'].replace('nan', '')
+                df['Nome do Logon'] = df['Nome do Logon'].str.strip()
+            
+            self.log_message(f"Dados carregados: {len(df)} linhas")
+            return df
+            
+        except Exception as e:
+            self.log_message(f"Erro ao ler arquivo: {str(e)}")
+            return None
+        finally:
+            if excel:
+                excel.Quit()
+            pythoncom.CoUninitialize()
+
     def process_file(self):
         if not self.selected_file:
             self.log_message("Por favor, selecione um arquivo de fatura primeiro!")
             return
             
         try:
-            # Read the fatura file
-
-            # Read the fatura file
-            df_fatura = pd.read_excel(self.selected_file)
+            # Read the protected Excel file
+            self.log_message("Iniciando leitura do arquivo...")
+            df_fatura = self.read_excel_com(self.selected_file)
+            if df_fatura is None or df_fatura.empty:
+                self.log_message("Erro: Não foi possível ler o arquivo ou arquivo está vazio")
+                return
+            
+            self.log_message("Processando dados...")    
+            # Clean and handle empty values better
+            df_fatura['Nome do Logon'] = df_fatura['Nome do Logon'].fillna('')
             df_fatura['Nome do Logon'] = df_fatura['Nome do Logon'].astype(str).str.strip()
-            df_fatura = df_fatura.replace('nan', pd.NA)
-            df_fatura = df_fatura.dropna(subset=['Nome do Logon'])
+            df_fatura = df_fatura[df_fatura['Nome do Logon'] != '']  # Remove empty logons
             
             # Read the DE-PARA file
             df_depara = pd.read_excel(self.depara_path)
+            df_depara['Nome do Logon'] = df_depara['Nome do Logon'].fillna('')
             df_depara['Nome do Logon'] = df_depara['Nome do Logon'].astype(str).str.strip()
             
             # Verify required columns in fatura
