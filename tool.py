@@ -41,14 +41,14 @@ class FaturaProcessorApp:
         self.selected_file = None
 
         # Check if DE-PARA.xlsx exists first
-        depara_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.xlsx")
-        if not os.path.exists(depara_path):
+        self.depara_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.xlsx")
+        if not os.path.exists(self.depara_path):
             example_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DE-PARA.example.xlsx")
             import shutil
-            shutil.copy2(example_path, depara_path)
+            shutil.copy2(example_path, self.depara_path)
             from tkinter import messagebox
             # Use after to ensure the window is fully loaded before showing the message
-            self.app.after(100, lambda: self.show_depara_warning(depara_path))
+            self.app.after(100, lambda: self.show_depara_warning(self.depara_path))
             return
 
         # Check if file was passed as argument
@@ -89,7 +89,7 @@ class FaturaProcessorApp:
             df_fatura = df_fatura.dropna(subset=['Nome do Logon'])
             
             # Read the DE-PARA file
-            df_depara = pd.read_excel(depara_path)
+            df_depara = pd.read_excel(self.depara_path)
             df_depara['Nome do Logon'] = df_depara['Nome do Logon'].astype(str).str.strip()
             
             # Verify required columns in fatura
