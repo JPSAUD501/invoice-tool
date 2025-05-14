@@ -33,8 +33,11 @@ if %errorlevel% neq 0 (
 )
 
 echo Repositorio clonado com sucesso!
-echo Para iniciar o aplicativo, execute o arquivo run.bat na pasta invoice-tool.
-echo.
+echo Iniciando o aplicativo...
 
-echo Removendo APP.bat...
+REM Launch the APP.bat from the new directory and pass any arguments
+cd invoice-tool
+start "" "%~dp0invoice-tool\APP.bat" %*
+
+echo Removendo APP.bat original...
 (goto) 2>nul & del "%~f0"
